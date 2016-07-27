@@ -1,0 +1,188 @@
+/** Producer and Consumer: No buffer case, Synchronziation through monitor
+*/
+
+import java.awt.*;
+import javax.swing.*;
+
+public class ProducerConsumer2 extends CloseableJFrame {
+    static Container c;
+    static JLabel	consumer = new JLabel("----- Consumer -----", SwingConstants.CENTER),
+		producer = new JLabel("----- Producer -----", SwingConstants.CENTER),
+		consumedCount = new JLabel("Consuming: 0", SwingConstants.CENTER),
+		producedCount = new JLabel("Producing: 0", SwingConstants.CENTER),
+		consumerStatus = new JLabel("   Waiting  ", SwingConstants.CENTER),
+		producerStatus = new JLabel("  Making   ", SwingConstants.CENTER),
+		threadStatus = new JLabel("Running thread: ", SwingConstants.CENTER);
+    static JPanel
+		burgerStatus = new JPanel();
+   static int	intConsumedCount =0, intProducedCount = 1;
+
+    public  ProducerConsumer2() {
+	super( "Hamburger Producer Consumer: Busy Waiting, One burger holder");
+	c = getContentPane();
+	consumer.setForeground(Color.green); consumer.setFont(new Font("NewsRoman", Font.BOLD, 20));
+	producer.setForeground(Color.yellow); producer.setFont(new Font("NewsRoman", Font.BOLD, 20));
+	consumedCount.setForeground(Color.green); consumedCount.setFont(new Font("NewsRoman", Font.BOLD, 20));
+	producedCount.setForeground(Color.yellow); producedCount.setFont(new Font("NewsRoman", Font.BOLD, 20));
+	consumerStatus.setForeground(Color.green); consumerStatus.setFont(new Font("NewsRoman", Font.BOLD, 20));
+	producerStatus.setForeground(Color.yellow); producerStatus.setFont(new Font("NewsRoman", Font.BOLD, 20));
+	burgerStatus.setBackground(Color.black); 
+	threadStatus.setForeground(Color.magenta); threadStatus.setFont(new Font("NewsRoman", Font.BOLD, 20));
+
+	c.setBackground(Color.black);
+	c.setLayout(new BorderLayout());
+	JPanel conPane = new JPanel();
+	conPane.setBackground(Color.black); conPane.setLayout(new GridLayout(3, 1));
+	conPane.add(consumer); conPane.add(consumedCount); conPane.add(consumerStatus); 
+	c.add(conPane, BorderLayout.WEST);
+
+	JPanel proPane = new JPanel();
+	proPane.setBackground(Color.black); proPane.setLayout(new GridLayout(3, 1));
+	proPane.add(producer); proPane.add(producedCount); proPane.add(producerStatus);
+	c.add(proPane, BorderLayout.EAST);
+
+	c.add(burgerStatus, BorderLayout.CENTER);
+	c.add(threadStatus, BorderLayout.NORTH);
+
+	setSize(550, 300);
+	show();
+
+	PCMonitor2 mt = new PCMonitor2();
+
+	Consumer2 cs = new Consumer2("Consumer", mt);
+	Producer2 pc = new Producer2("Producer", mt);
+	pc.start();cs.start(); 
+    }
+
+    public static void main(String argv[]) {
+	new ProducerConsumer2() ;
+    }
+}
+
+class Consumer2 extends Thread {
+   private final int MAX_EATING_TIME = 2000, MIN_EATING_TIME = 2000,
+				MAX_DIGESTING_TIME = 1000, MIN_DIGESTING_TIME = 2000;
+
+   private PCMonitor2 mt;
+
+   public Consumer2(String name, PCMonitor2 m) {super(name);  mt = m; }
+
+   public void run() {
+
+	while ( true ) {
+
+		ProducerConsumer2.consumerStatus.setText("Waiting");
+		
+		mt.getHamburger();
+
+		ProducerConsumer2.intConsumedCount++;
+		ProducerConsumer2.consumerStatus.setText("Eating");
+
+		ProducerConsumer2.consumedCount.setText("Consuming: " + ProducerConsumer2.intConsumedCount);
+
+		try { Thread.sleep( (long) (Math.random() * MAX_EATING_TIME + MIN_EATING_TIME)); }
+		catch (InterruptedException e) {}
+
+		ProducerConsumer2.consumedCount.setText("Finshed: " + ProducerConsumer2.intConsumedCount);
+
+		ProducerConsumer2.consumerStatus.setText("Digesting");
+		try { Thread.sleep( (long) (Math.random() * MAX_DIGESTING_TIME + MIN_DIGESTING_TIME)); }
+		catch (InterruptedException e) {}
+
+		ProducerConsumer2.consumerStatus.setText("Relaxing");
+		try { Thread.sleep( (long) (Math.random() * MAX_DIGESTING_TIME + MIN_DIGESTING_TIME)); }
+		catch (InterruptedException e) {}
+	}
+   }
+}
+
+class Producer2 extends Thread {
+   private final int	MAX_MAKING_TIME = 2000, MIN_MAKING_TIME = 2000,
+				MAX_PREPARING_TIME = 1000, MIN_PREPARING_TIME = 2000;
+
+   private PCMonitor2 mt;
+
+   public Producer2(String name, PCMonitor2 m) {super(name); mt = m; }
+
+   public void run() {
+
+	while ( true ) {
+
+		ProducerConsumer2.producerStatus.setText("Making");
+
+		ProducerConsumer2.producedCount.setText("Producing: " + ProducerConsumer2.intProducedCount);
+
+		try { Thread.sleep( (long) (Math.random() * MAX_MAKING_TIME + MIN_MAKING_TIME)); }
+		catch (InterruptedException e) {}
+
+		ProducerConsumer2.producedCount.setText("Produced: " + ProducerConsumer2.intProducedCount);
+
+		ProducerConsumer2.producerStatus.setText("Waiting"); 
+		
+		mt.putHamburger();
+
+
+		ProducerConsumer2.intProducedCount++;
+		ProducerConsumer2.producerStatus.setText("Preparing: " + ProducerConsumer2.intProducedCount);
+
+		try { Thread.sleep( (long) (Math.random() * MAX_PREPARING_TIME + MIN_PREPARING_TIME)); }
+		catch (InterruptedException e) {}
+
+	}
+   }
+}
+
+class PCMonitor2 {
+	private boolean emptyTray;
+	Graphics2D g2; 
+	ImageIcon burger = new ImageIcon("burger.gif");
+
+	PCMonitor2() {
+		emptyTray = true; 
+		g2 = (Graphics2D) ProducerConsumer2.burgerStatus.getGraphics();
+		g2.setColor(Color.white);
+		g2.setFont(new Font("TimesRoman", Font.BOLD, 20));
+	}
+
+	public synchronized void getHamburger() {
+		if ( emptyTray )
+			try { wait(); } catch (InterruptedException e) {}
+
+		emptyTray = true;
+		paintHamburger();
+
+		// The following delay is necessary for graphics to be drawn on screen.
+		// Without the delay, the synchronization with screen drawing fall apart because of
+		// the asynchronzation feature of drawing function.
+		try { Thread.sleep( (long) (Math.random() * 1000 + 500)); } catch (InterruptedException e) {}
+		notify();
+	}
+
+	public synchronized void putHamburger() {
+		if ( ! emptyTray ) 
+			try { wait(); } catch(InterruptedException e) {}
+
+		emptyTray = false;
+		paintHamburger();
+		try { Thread.sleep( (long) (Math.random() * 1000 + 500)); } catch (InterruptedException e) {}
+		notify();
+	}
+
+	private void paintHamburger() {
+		ProducerConsumer2.threadStatus.setText("Running Thread: " + Thread.currentThread().getName());
+		int ww = ProducerConsumer2.burgerStatus.getWidth(),
+		    hh = ProducerConsumer2.burgerStatus.getHeight();
+		if ( emptyTray )  {
+			// erase the image.
+			ProducerConsumer2.burgerStatus.repaint();
+			try { Thread.sleep(50); } catch(InterruptedException e) {}
+			g2.drawString("No burger available", ww/8, hh / 2);
+		}
+		else {
+			ProducerConsumer2.burgerStatus.repaint();
+			try { Thread.sleep(50); } catch(InterruptedException e) {}
+			burger.paintIcon(ProducerConsumer2.burgerStatus, g2, ww/4, hh/4);
+			g2.drawString("Burger No. " + ProducerConsumer2.intProducedCount, ww/5, hh/5);
+		}
+	}
+}

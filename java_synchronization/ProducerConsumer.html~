@@ -1,0 +1,5 @@
+<title>Producer & Consumer </title>
+<hr>
+<applet code="ProducerConsumer.class"
+	width=500 height=500>
+</applet>

@@ -1,0 +1,285 @@
+/** Multiple Thread Merger Sort:
+
+    Merge sort is an useful internal sorting algorithm. The algorithm sorts
+small portions of data first and then merge the sorted portions into a
+larger sorted portions. The sorting will be done by repeatedly merging
+portion into larger one until one portion left.
+
+   In Merge Sort, we will
+	1. divide arrays into portions with initial run-size, and let one thread to
+	   sort one portion.
+	2. merge two adjacent sorted portions of into a doubled portion after the
+	   two adjacent portions are sorted. One thread will be used to merge two
+	   adjacent portions into a bigger one. No blocking between two merge threads.
+	3. Repeatedly, use thread to merge two larger portions into even bigger
+	   one until the merged portion is the whole array. 
+   Notice that
+	1. Threads for sorting portions of array need no synchronization among
+	   themself.
+	2. A threads for merging two portions and the two threads that sort the two
+	   portion must be synchronized. Call join() on sorting or merging on two thereads
+	   before another merging thread can start.
+	3. Thread for merging the merged portions by other two merging threads should
+	   be synchronized since the drawing threads.
+*/
+import java.awt.*;
+import java.awt.event.*;
+import javax.swing.*;
+import java.util.*;
+
+public class MultiThreadMergeSort extends JApplet implements ActionListener {
+
+   JButton btnSort[] = { new JButton("Generate"), 
+			new JButton("Sort"), new JButton("Shuffle") };
+   JPanel  panSouth = new JPanel();
+   Canvas  drawingBoard = new Canvas();
+   int	   data[] = new int [SortCons.ARRAY_SIZE];
+   MergeSortMonitor sortMtr;
+
+   public MultiThreadMergeSort() {
+   }
+ 
+   public void init() {
+	Container c = getContentPane();
+	c.setSize(600, 500);
+
+	c.setLayout(new BorderLayout() );
+	for ( int i = 0; i < btnSort.length; i ++ ) {
+		btnSort[i].addActionListener(this);
+		panSouth.add(btnSort[i]);
+	}
+	c.add(panSouth, BorderLayout.SOUTH);
+	c.add(drawingBoard, BorderLayout.CENTER);
+   }
+
+   public void start() {
+ 	sortMtr = new MergeSortMonitor (data, drawingBoard);
+   }
+
+   public void actionPerformed ( ActionEvent e ) {
+	int k = -1;
+	Object o = e.getSource();
+	for ( int i = 0; i < btnSort.length; i ++ ) {
+		if ( o == btnSort[i] ) { k = i; break; }
+	}
+	switch ( k ) {
+		case 0: new MergeSortThread(sortMtr, SortCons.GENERATE, 0, SortCons.ARRAY_SIZE).start(); break;
+		case 1: new Dummy(data, drawingBoard ).start() ; break;
+		case 2: new MergeSortThread(sortMtr, SortCons.SHUFFLE, 0, SortCons.ARRAY_SIZE).start(); break;
+	}
+   }
+
+   public void paint(Graphics g) { super.paint(g); }
+
+   public static void main( String argv[] ) {
+	JFrame fmObj = new JFrame("Multithreaded 2-Way Merge Sort");
+	fmObj.addWindowListener( new  WindowAdapter() {
+			public void windowClosing( WindowEvent e ) { System.exit(0); } } );
+	fmObj.setSize(600, 500);
+	MultiThreadMergeSort apObj = new MultiThreadMergeSort();
+	apObj.init();
+	fmObj.getContentPane().add(apObj);
+	fmObj.show();
+//	try { Thread.sleep(1000); } catch (InterruptedException e) {}
+	apObj.start();
+   }
+}
+
+class Dummy extends Thread { // The only purpose of this class is to let sort button return immediately.
+   int data[];
+   Canvas drawingBoard;
+
+   public Dummy( int d[], Canvas v) { data = d; drawingBoard = v; }
+
+   public void run () {
+	int rmdr = SortCons.ARRAY_SIZE % SortCons.PORTION_SIZE;
+	int cnt = SortCons.ARRAY_SIZE / SortCons.PORTION_SIZE;
+	int numOfGroups = rmdr == 0 ? cnt : cnt+ 1;
+	MergeSortMonitor []  sortMntrs = new MergeSortMonitor[numOfGroups], sortMntrs2;
+	MergeSortThread [] sortThreads = new MergeSortThread[numOfGroups], sortThreads2;
+	
+	// -------------------------------------------------------------------
+	// Define one monitor object for sorting thread so that they will not
+	// block each other. Notice that sort() in monitor must be synchronized
+	// because the merging thread may start before sorting is done.
+	// -------------------------------------------------------------------
+	int lb = 0, ub = 0, lb2 = 0, ub2 = 0;
+	for ( int i = 0; i < numOfGroups; i ++ ) {
+		sortMntrs[i] = new MergeSortMonitor( data, drawingBoard );
+		lb = i * SortCons.PORTION_SIZE;
+		ub = i*SortCons.PORTION_SIZE + SortCons.PORTION_SIZE ;
+		ub = ub > data.length? data.length : ub;
+		sortThreads[i] = new MergeSortThread(sortMntrs[i], SortCons.SORT, lb, ub);
+		sortThreads[i].start();
+	}
+	try { 	Thread.sleep(50); } catch (InterruptedException e ) {}
+	
+	// -------------------------------------------------------------------------
+	// Merge two adjacent sorted portitions into a larger group until the sise
+	// of larger group is larger than or equal to array size.
+	// -------------------------------------------------------------------------
+	if ( numOfGroups < 2 ) return;
+	int groupSize = SortCons.PORTION_SIZE;
+	do {
+		numOfGroups = numOfGroups % 2 == 0 ? numOfGroups / 2 : numOfGroups / 2 + 1;
+		sortMntrs2 = new MergeSortMonitor[numOfGroups];
+		sortThreads2 = new MergeSortThread[numOfGroups];
+		for ( int i =0; i < numOfGroups; i ++ ) {
+			try {	sortThreads[i*2].join();
+				if ( i * 2 + 1 < sortThreads.length )
+					sortThreads[i*2+1].join();
+			} catch (InterruptedException e) {}
+
+			sortMntrs2[i] = new MergeSortMonitor( data, drawingBoard );
+			lb = i * 2 * groupSize;
+			ub = i * 2 * groupSize + groupSize ;
+			ub = ub > data.length? data.length : ub;
+			lb2 = ub;
+			ub2 = lb2 + groupSize;
+			ub2 = ub2 > data.length? data.length : ub2;
+			sortThreads2[i] = new MergeSortThread(sortMntrs2[i], SortCons.MERGE, lb, ub, lb2, ub2);
+			sortThreads2[i].start();
+		   /* For debuging
+			System.out.println("Lower 1 = " + lb);
+			System.out.println("Upper 1 = " + ub);
+			System.out.println("Lower 2 = " + lb2);
+			System.out.println("Upper 2 = " + ub2);
+		   */
+		}
+		groupSize *= 2;
+		sortMntrs = sortMntrs2;
+		sortThreads = sortThreads2;
+		try { 	Thread.sleep(50); } catch (InterruptedException e ) {}
+	} while ( groupSize < SortCons.ARRAY_SIZE );						
+   }
+}
+
+class MergeSortThread extends Thread {
+   MergeSortMonitor mtr;
+   int action, lb1, ub1, lb2, ub2;
+
+   // Thread Constuctor for sorting a portion of array.
+   public  MergeSortThread (MergeSortMonitor m, int act, int l1, int u1) {
+	action = act; mtr = m; lb1 = l1; ub1 = u1;
+   }
+
+   public  MergeSortThread (MergeSortMonitor m, int act, int l1, int u1, int l2, int u2) {
+	action = act; mtr = m; lb1 = l1; ub1 = u1; lb2 = l2; ub2 = u2;
+   }
+
+   public void run() {
+	switch ( action ) {
+		case SortCons.GENERATE:	mtr.generateData(); break;
+		case SortCons.SORT:	mtr.sort(lb1, ub1);
+					try { sleep( (int) (Math.random() * 1000) + 1000 ); } catch (InterruptedException e) {}
+					break;
+		case SortCons.MERGE: 	mtr.merge(lb1, ub1, lb2, ub2);
+					try { sleep( (int) (Math.random() * 1000) + 1000); } catch (InterruptedException e) {}
+					break;
+		case SortCons.SHUFFLE: 	mtr.shuffle(); break;
+	}
+   }
+}
+
+class MergeSortMonitor {
+
+   int data[] ;
+   Canvas cvs;
+   Graphics2D g2d;
+   Random rnd = new Random();
+   Color bkColor = Color.black, lineColor = Color.white, rectColor = Color.yellow;
+
+   MergeSortMonitor ( int [] d, Canvas v ) {
+	data = d; cvs = v; g2d = (Graphics2D) v.getGraphics();
+	cvs.setBackground(bkColor);
+	g2d.setColor(Color.white); g2d.setFont( new Font("Aril", Font.BOLD, 14)) ;
+   }
+
+   public synchronized void generateData() {
+	for ( int i = 0; i < data.length; i ++ )
+		data[i] = rnd.nextInt( SortCons.MAX_INT );
+	showData(0, data.length);
+   }
+
+   // -----------------------------------------------------------
+   // Sort part of array: data[lowerBound] ... data[upperBound-1]
+   // -----------------------------------------------------------
+   public synchronized void sort(int lowerBound, int upperBound) {
+
+	if ( lowerBound >= data.length ) return;
+
+	int k, tmp ;
+	for ( int i = lowerBound; i < upperBound - 1; i ++ ) {
+		k  = i;
+		for ( int j = i + 1; j < upperBound; j ++ ) 
+			if ( data[j] < data[k] ) k = j;
+		tmp = data[i]; data[i] = data[k]; data[k] = tmp;
+		showData(lowerBound, upperBound);
+		try {Thread.sleep(50); } catch (InterruptedException e) {}
+	}
+   }
+
+   // -----------------------------------------------------------
+   // Merge two adjacent part of array: data[lb1 .. ub1] and 
+   // data[lb2 .. ub2]. The ub1 == lb2, then two parts are adjacent.
+   // -----------------------------------------------------------
+   public synchronized int merge(int lb1, int ub1, int lb2, int ub2 ) {
+	if ( ub1 != lb2 ) return -1;
+	if ( lb2 >= ub2 ) return -1;
+	int d[] = new int[ ub2 - lb1]; //there are better algorithm for merging.
+
+	int i = lb1, j = lb2, k = 0;
+	while ( i < ub1 || j < ub2 ) {
+		if ( i >= ub1 ) { d[k++] = data[j++]; }
+		else if ( j >= ub2 ) { d[k++] = data[i++]; }
+			else if ( data[i] < data[j] ) d[k++] = data[i++];
+				else  d[k++] = data[j++];
+	}
+	// copy merged and sorted larger portion back.
+	for ( i = lb1, k = 0; i < ub2; i++, k++ )
+		data[i] = d[k];
+	showData(lb1, ub2);
+	return ub2 - lb1 ;
+   }
+
+   public synchronized void shuffle() {
+	int k, tmp;
+	for ( int i = 0; i < data.length; i ++ ) {
+		k = rnd.nextInt(data.length);
+		tmp = data[i]; data[i] = data[k]; data[k] = tmp;
+	}
+	showData(0, data.length);
+   }
+   public synchronized void showData(int lb, int ub) {
+	int cvsWidth = cvs.getWidth(), cvsHeight = cvs.getHeight();
+	int drawingWidth = cvs.getWidth() - SortCons.RIGHT_INSET - SortCons.LEFT_INSET;
+	int drawingHeight = cvs.getHeight() - SortCons.TOP_INSET - SortCons.BOTTOM_INSET;
+	float gap = (float) drawingWidth / SortCons.ARRAY_SIZE;
+
+	// g2d.clearRect(0, 0, drawingWidth, drawingHeight);
+	g2d.setColor(rectColor);
+	g2d.drawRect( SortCons.LEFT_INSET, SortCons.TOP_INSET, drawingWidth, drawingHeight);
+	g2d.drawString("No Blocking on Initial Sorting Threads nor on Merging Threads on the Same Levels",
+			10, SortCons.TOP_INSET-5);
+	g2d.setColor(lineColor);
+	for ( int i = lb; i < ub; i ++ ) {
+		// Erase a line
+		g2d.setColor(bkColor);
+		g2d.drawLine((int ) ( (i + 0.5)  * gap + SortCons.LEFT_INSET) , cvsHeight - SortCons.BOTTOM_INSET,
+			     (int ) ( (i + 0.5)  * gap + SortCons.LEFT_INSET), 
+			     cvsHeight - SortCons.BOTTOM_INSET -  drawingHeight + 1 );
+		// draw a line.
+		if ( i != ub - 1 || i == SortCons.ARRAY_SIZE - 1) g2d.setColor(lineColor);
+		else g2d.setColor( Color.blue );
+		g2d.drawLine((int ) ( (i + 0.5)  * gap + SortCons.LEFT_INSET) , cvsHeight - SortCons.BOTTOM_INSET,
+			     (int ) ( (i + 0.5)  * gap + SortCons.LEFT_INSET), 
+			     cvsHeight - SortCons.BOTTOM_INSET - 
+			     (int) ((float) data[i] / SortCons.MAX_INT * drawingHeight) );
+		/*  Display data in text.
+		System.out.print( ScreenIO.expandString(ScreenIO.formatInt(data[i]), 5));
+		if ( (i + 1) % 20 == 0 ) System.out.println("");
+		*/
+		
+	}
+   }
+}

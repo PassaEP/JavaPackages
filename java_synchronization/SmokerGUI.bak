@@ -1,0 +1,147 @@
+import javax.swing.*;
+import java.awt.*;
+
+public class SmokerGUI extends JFrame {
+
+   public SmokerGUI () {
+	setTitle("Smoker Problem: Multithread & Synchronization");
+	setSize(600, 400);
+	setVisible(true);
+   }
+
+   public static void main( String arg[] ) {
+      JFrame app = new SmokerGUI();
+      app.getContentPane().setBackground(Color.black);
+      Graphics2D g = (Graphics2D) app.getContentPane().getGraphics();
+      g.setFont(new Font("Aril", Font.BOLD, 18));
+      g.setBackground(Color.black);
+      g.setXORMode ( Color.green );
+      SmokerMonitor mtr = new SmokerMonitor( g ) ;
+      for( int i = 0; i < 3; i ++ )
+		new Smoker(i, mtr, g ).start();
+      new Agent(3, mtr, g).start();
+   }
+}
+
+class SmokerUtil {
+  static int	x[] = {60, 250, 420, 250};
+  static int	y[] = {210, 350, 210, 50};
+  static int	labelX = 250, labelY = 200;
+  static String ingredient[] = {"Match", "Paper", "Tobacco", "Agent" };
+  static Color  color[] = { Color.red, Color.yellow, Color.blue, Color.white};
+  static boolean printTitle[] = { true, true, true, true };
+
+  synchronized static void simulate (Graphics2D g, int k, String msg, int lb, int ub ) {
+	String title = k < 3 ? "Smoker-Need-" + ingredient[k]: ingredient[k];
+	try { Thread.sleep( HWUtil.nextInt( ub - lb + 1) + lb ); }
+	catch (Exception e) {}
+	g.setColor( color[k] );
+	if ( printTitle[k] ) {
+		g.drawString( title , x[k]-(k==3? -5 : 40), y[k] - 20);
+		printTitle[k] = ! printTitle[k];
+	}
+	g.clearRect(x[k], y[k] - 16, 120, 34);
+	g.drawString( msg, x[k], y[k] );
+  }
+
+  synchronized static void drawIng(Graphics2D g, int smk, int ing) {
+	g.clearRect(250, 200 - 18, 100, 40);
+	g.setColor( color[ing] );
+	if ( smk == 3 )  // it is agent not a smoker.
+		g.drawString( ingredient[ing], labelX, labelY);
+	else    simulate( g, smk, ingredient[ing], 400, 1000);
+  }
+
+  synchronized static void moveToTable(Graphics2D g, int ing ) {
+	g.setColor(color[ing]);
+	try { Thread.sleep( 10 ); } catch (Exception e) {}
+	int inc = y[3] <= labelY ? 1: -1;
+	float k =  ((float) labelX- x[3])/(labelY - y[3] ) ;
+	int u = x[3], v = y[3];
+	g.drawString(ingredient[ing], u, v);
+	for ( v= y[3]; v != labelY; v = v + inc ) {
+		g.drawString(ingredient[ing], u, v);
+		u = (int) (k * (v - y[3]) + x[3]);
+		try { Thread.sleep( 10 ); } catch (Exception e) {}
+		g.drawString(ingredient[ing], u, v);
+	}	
+	g.drawString(ingredient[ing], u, v);
+  }
+
+  synchronized static void moveFromTable( int ing, int destination ) {
+  }
+  static void move(int ing, int x1, int y1, int x2, int y2 ) {
+  }
+}
+
+class SmokerMonitor {
+  int	available = -1;
+  Graphics2D g = null;
+
+  public SmokerMonitor( Graphics2D gr ) { g = gr; }
+
+  synchronized public int get( int smkr ) {
+	while ( available != smkr ) {
+		notifyAll();
+		SmokerUtil.simulate(g, smkr, "Waiting", 400, 1000);
+		try { wait(); } catch (Exception e) {}
+	}
+
+	// SmokerUtil.simulate(g, smkr, "Getting", 400, 1000);
+	int ing = available;
+	available = -1 ;
+	// SmokerUtil.drawIng(g, smkr, ing);
+	// SmokerUtil.moveToTable(g, ing);
+	notifyAll();
+	return smkr;
+  }
+
+  synchronized public void put( int ing) {
+	while ( available >= 0  ) {
+		notifyAll();
+		SmokerUtil.simulate(g, 3, "Waiting", 400, 1000);
+		try { wait(); } catch (Exception e) {}
+	}
+
+	// SmokerUtil.simulate(g, 3, SmokerUtil.ingredient[ing], 400, 1000); 
+	available = ing ;
+	SmokerUtil.moveToTable(g, ing);
+	// SmokerUtil.drawIng(g, 3, ing);
+	notifyAll();
+  }
+}
+
+class Smoker extends Thread {
+   int id;
+   SmokerMonitor mtr;
+   Graphics2D	g;
+   int ing = -1;
+   public Smoker( int k, SmokerMonitor m, Graphics2D gr ) { id = k; mtr = m; g = gr; }  
+
+   public void run() {
+
+	while (true ) {
+		SmokerUtil.simulate(g, id, "Chatting", 1000, 2000);
+		ing = mtr.get( id );
+		SmokerUtil.simulate(g, id, "Smoking", 1000, 2000);
+	}
+   }
+}
+
+
+class Agent extends Thread {
+   int id;
+   SmokerMonitor mtr;
+   Graphics2D g;
+   public Agent( int k, SmokerMonitor m, Graphics2D gr ) { id = k; mtr = m; g = gr;}  
+
+   public void run() {
+	int ing;
+	while (true ) {
+		SmokerUtil.simulate(g, id, "Making", 1000, 2000);
+		ing = HWUtil.nextInt(3);
+		mtr.put( ing );
+		SmokerUtil.simulate(g, id, "Relaxing", 1000, 2000);
+	}
+   }
+}
